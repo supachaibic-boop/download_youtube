@@ -1,5 +1,7 @@
 # Video Vault — YouTube Download Manager
 
+> **V2 GitHub Pages:** ดู [Readme_V2.md](Readme_V2.md) และหน้าเว็บใน `docs/` สำหรับเล่น YouTube และจัดรายการโดยไม่ใช้ Docker รุ่น V2 ไม่ดาวน์โหลดหรืออัดสตรีม ส่วนรุ่น Docker ก่อนเริ่ม V2 สำรองไว้ใน branch [`v1`](https://github.com/supachaibic-boop/download_youtube/tree/v1)
+
 เว็บภาษาไทยสำหรับรับลิงก์ YouTube ดาวน์โหลดเป็น MP4 / MP3 แสดงชื่อวิดีโอ ลิงก์ต้นทาง สถานะ ความคืบหน้า ชื่อไฟล์ ขนาดไฟล์ และตำแหน่งจัดเก็บ พร้อมบันทึกประวัติใน SQLite จริง
 
 
