@@ -1,5 +1,6 @@
 """Single-process, single-worker YouTube download manager. Python 3.11+."""
-import contextlib
+import collections
+import subprocess
 import hashlib
 import hmac
 import json
@@ -46,7 +47,13 @@ def init_db():
           status TEXT NOT NULL, message TEXT, created_at TEXT NOT NULL);
           CREATE INDEX IF NOT EXISTS jobs_status_created ON jobs(status, created_at);
           CREATE INDEX IF NOT EXISTS events_job ON events(job_id);''')
-        c.execute("UPDATE jobs SET status='queued', error=NULL WHERE status IN ('extracting','downloading','processing')")
+        columns = {r[1] for r in c.execute('PRAGMA table_info(jobs)')}
+        for name, definition in [('mode', "TEXT NOT NULL DEFAULT 'download'"),
+                                 ('duration_seconds', 'REAL NOT NULL DEFAULT 0'),
+                                 ('recorded_seconds', 'REAL NOT NULL DEFAULT 0')]:
+            if name not in columns:
+                c.execute(f'ALTER TABLE jobs ADD COLUMN {name} {definition}')
+        c.execute("UPDATE jobs SET status='queued', error=NULL WHERE status IN ('extracting','downloading','recording','processing')")
 
 def update(job_id, **fields):
     fields['updated_at'] = now()
@@ -71,6 +78,92 @@ def normalize_url(raw):
         return 'https://www.youtube.com/watch?'+urlencode({'v':vid})
     except (ValueError, IndexError):
         raise ValueError('กรุณาใส่ลิงก์วิดีโอ YouTube แบบ HTTPS ที่ถูกต้อง (ไม่รองรับ playlist)')
+
+def record_stream(job, info, output):
+    """Read selected media at native rate until EOF; publish only complete files."""
+    duration = float(info.get('duration') or 0)
+    if info.get('is_live') or not 0 < duration <= 10800:
+        raise RuntimeError('โหมดบันทึกรองรับวิดีโอที่จบแล้ว ความยาวไม่เกิน 3 ชั่วโมงและมีข้อมูลระยะเวลา')
+    streams = info.get('requested_formats') or [info]
+    if any(s.get('has_drm') for s in streams):
+        raise RuntimeError('ไม่รองรับสตรีม DRM')
+    cmd = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
+           '-nostats', '-stats_period', '1', '-progress', 'pipe:1', '-y']
+    for stream in streams:
+        url = stream.get('url', '')
+        if urlsplit(url).scheme not in ('https', 'http'):
+            raise RuntimeError('ไม่รองรับรูปแบบสตรีมนี้')
+        headers = {**info.get('http_headers', {}), **stream.get('http_headers', {})}
+        header_text = ''.join(f'{k}: {v}\r\n' for k, v in headers.items()
+                              if re.fullmatch(r'[A-Za-z0-9-]+', k)
+                              and '\r' not in str(v) and '\n' not in str(v))
+        cmd += ['-re', '-rw_timeout', '30000000']
+        if header_text:
+            cmd += ['-headers', header_text]
+        cmd += ['-i', url]
+    audio = next((i for i,s in enumerate(streams) if s.get('acodec') not in (None, 'none')), None)
+    video = next((i for i,s in enumerate(streams) if s.get('vcodec') not in (None, 'none')), None)
+    if job['format'] == 'mp3':
+        if audio is None: raise RuntimeError('ไม่พบสตรีมเสียง')
+        cmd += ['-map', f'{audio}:a:0', '-vn', '-c:a', 'libmp3lame', '-b:a', '192k']
+    else:
+        if video is None: raise RuntimeError('ไม่พบสตรีมวิดีโอ')
+        cmd += ['-map', f'{video}:v:0']
+        if audio is not None: cmd += ['-map', f'{audio}:a:0']
+        cmd += ['-c', 'copy', '-movflags', '+faststart']
+    partial = output.with_name(output.stem + '.recording' + output.suffix)
+    cmd += [str(partial)]
+    update(job['id'], status='recording', title=info.get('title', job['title']),
+           duration_seconds=duration, recorded_seconds=0, progress=0)
+    done = threading.Event()
+    timed_out = threading.Event()
+    errors = collections.deque(maxlen=12)
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, encoding='utf-8', errors='replace') as proc:
+        def drain_errors():
+            for line in proc.stderr: errors.append(line[:1000])
+        def watchdog():
+            deadline = time.monotonic() + duration + 300
+            while not done.wait(0.25):
+                if STOP.is_set() or time.monotonic() > deadline:
+                    timed_out.set()
+                    if proc.poll() is None: proc.kill()
+                    return
+        reader = threading.Thread(target=drain_errors, daemon=True)
+        guard = threading.Thread(target=watchdog, daemon=True)
+        reader.start(); guard.start()
+        try:
+            for line in proc.stdout:
+                key, _, value = line.strip().partition('=')
+                if key == 'out_time_us':
+                    try: seconds = max(0, float(value) / 1_000_000)
+                    except ValueError: continue
+                    update(job['id'], recorded_seconds=seconds,
+                           progress=min(99, round(100*seconds/duration, 1)),
+                           eta=max(0, int(duration-seconds)),
+                           downloaded_bytes=partial.stat().st_size if partial.exists() else 0)
+                elif key == 'progress' and value == 'end':
+                    update(job['id'], status='processing', eta=0)
+            code = proc.wait(timeout=10)
+        finally:
+            done.set()
+            if proc.poll() is None: proc.kill(); proc.wait()
+            reader.join(timeout=2); guard.join(timeout=2)
+    if timed_out.is_set():
+        raise RuntimeError('การบันทึกหยุดลงหรือเกินเวลาที่กำหนด กรุณาลองใหม่')
+    if code != 0:
+        detail = re.sub(r'https?://\S+', '[stream URL]', ''.join(errors))[-1500:]
+        raise RuntimeError('FFmpeg บันทึกไม่สำเร็จ: ' + detail)
+    # A clean EOF can also mean an interrupted HTTP response; verify duration.
+    probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                            '-of', 'json', str(partial)], capture_output=True, text=True, timeout=30)
+    try: actual = float(json.loads(probe.stdout)['format']['duration'])
+    except (ValueError, KeyError, TypeError): raise RuntimeError('ตรวจสอบไฟล์ที่บันทึกไม่ได้')
+    if probe.returncode or actual <= 0 or actual < duration - max(2, duration*0.01):
+        raise RuntimeError('สตรีมจบก่อนครบความยาววิดีโอ ไฟล์ยังไม่ถูกระบุว่าสำเร็จ กรุณาลองใหม่')
+    partial.replace(output)
+    return output
+
 
 def download_job(job):
     import yt_dlp
@@ -104,7 +197,17 @@ def download_job(job):
         opts.update(format=f'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/best[height<={h}][ext=mp4]', merge_output_format='mp4')
     update(job['id'],status='extracting',error=None)
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info=ydl.extract_info(job['url'],download=True)
+        recording = job.get('mode', 'download') == 'record'
+        info=ydl.extract_info(job['url'], download=not recording)
+        if recording:
+            if not info: raise RuntimeError('ไม่พบข้อมูลวิดีโอ')
+            output = Path(ydl.prepare_filename(info)).with_suffix('.' + job['format'])
+            file = record_stream(job, info, output)
+            update(job['id'], status='completed', title=info.get('title',job['title']),
+                   progress=100, recorded_seconds=info.get('duration') or 0,
+                   filename=file.name, storage_path=str(file), size_bytes=file.stat().st_size,
+                   speed=0, eta=None)
+            return
     if not info: raise RuntimeError('ไม่พบข้อมูลวิดีโอ')
     files=list(folder.glob('*.'+job['format']))
     if not files: raise RuntimeError('ไม่พบไฟล์ผลลัพธ์หลังประมวลผล')
@@ -201,19 +304,21 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/jobs':
                 data=self.body();url=normalize_url(data.get('url',''))
                 fmt=data.get('format','mp4');quality=int(data.get('quality',1080))
+                mode=data.get('mode','record')
+                if mode not in ('record','download'): raise ValueError('โหมดไม่ถูกต้อง')
                 if fmt not in ('mp4','mp3') or quality not in (360,480,720,1080): raise ValueError('รูปแบบหรือความละเอียดไม่ถูกต้อง')
                 with connect() as c:
-                    if c.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','extracting','downloading','processing')").fetchone()[0]>=50:
+                    if c.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','extracting','downloading','recording','processing')").fetchone()[0]>=50:
                         return self.send_json(429,{'error':'คิวเต็ม (50 รายการ)'})
                     id=secrets.token_hex(16);t=now()
-                    c.execute('INSERT INTO jobs(id,url,title,format,quality,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
-                              (id,url,'กำลังรออ่านชื่อวิดีโอ',fmt,quality,'queued',t,t))
+                    c.execute('INSERT INTO jobs(id,url,title,format,quality,status,created_at,updated_at,mode) VALUES(?,?,?,?,?,?,?,?,?)',
+                              (id,url,'กำลังรออ่านชื่อวิดีโอ',fmt,quality,'queued',t,t,mode))
                     c.execute('INSERT INTO events(job_id,status,created_at) VALUES(?,?,?)',(id,'queued',t))
                 return self.send_json(201,{'id':id})
             m=re.fullmatch(r'/api/jobs/([a-f0-9]{32})/retry',self.path)
             if m:
                 with connect() as c:
-                    count=c.execute("UPDATE jobs SET status='queued',progress=0,error=NULL,updated_at=? WHERE id=? AND status='failed'",(now(),m[1])).rowcount
+                    count=c.execute("UPDATE jobs SET status='queued',progress=0,recorded_seconds=0,downloaded_bytes=0,error=NULL,updated_at=? WHERE id=? AND status='failed'",(now(),m[1])).rowcount
                     if count: c.execute('INSERT INTO events(job_id,status,created_at) VALUES(?,?,?)',(m[1],'queued',now()))
                 return self.send_json(200 if count else 409,{'ok':bool(count),'error':None if count else 'ลองใหม่ได้เฉพาะรายการที่ไม่สำเร็จ'})
             self.send_json(404,{'error':'ไม่พบ API'})
