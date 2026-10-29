@@ -6,11 +6,15 @@ V2 เป็นเว็บแบบ static สำหรับวางลิง
 
 ## สถานะการเผยแพร่
 
-**ยังไม่สามารถ deploy ได้:** ตรวจหน้า Settings → Pages ขณะเข้าสู่ระบบแล้ว GitHub แสดงข้อความ **“Upgrade or make this repository public to enable Pages”** เนื่องจาก repository เป็น Private และแผนปัจจุบันยังไม่รองรับ Pages สำหรับ repository นี้ ไม่มีการเปลี่ยน visibility หรืออัปเกรดแผนโดยอัตโนมัติ
+**Deploy สำเร็จและเปิดเว็บไซต์จริงตรวจสอบแล้ว วันที่ 29 ตุลาคม 2569**
 
-ซอร์ส V2 อยู่ใน `docs/` พร้อมเผยแพร่จาก branch `main` และโฟลเดอร์ `/docs` เมื่อเจ้าของเลือกอัปเกรดแผนหรืออนุญาตให้เปลี่ยน repository เป็น Public แล้วจึงเปิด Pages ได้ การเปลี่ยน repository นี้เป็น Public จะเปิดซอร์สทุก branch รวม `v1` ด้วย ยังไม่มี URL เว็บไซต์ที่ยืนยันว่า deploy สำเร็จ
+เปิดใช้งาน: **https://supachaibic-boop.github.io/download_youtube/**
 
-Repository นี้ยังคงเป็น Private ไม่มีการเปลี่ยนเป็น Public โดยอัตโนมัติ GitHub Pages สำหรับ private repository ขึ้นอยู่กับแผน GitHub ของบัญชี และหน้าเว็บ Pages มักเปิดให้บุคคลทั่วไปเข้าชมได้แม้ซอร์สเป็น Private รายการที่บันทึกใน V2 อยู่ในเบราว์เซอร์ ไม่ได้บรรจุในไฟล์หน้าเว็บ
+- Repository เป็น **Public** ตามที่เจ้าของอนุญาต ซอร์สทุก branch รวม `v1` เปิดให้ดูได้
+- GitHub Pages ใช้ **Deploy from a branch → main → /docs** และบังคับ HTTPS
+- Deployment ที่ยืนยันสำเร็จ: https://github.com/supachaibic-boop/download_youtube/actions/runs/40862610686
+- ตรวจหน้าเว็บจริงแล้ว: โหลด HTML/CSS/JavaScript ได้ เพิ่มรายการสำเร็จ และข้อมูล IndexedDB ยังอยู่หลังรีโหลด
+- รายการส่วนตัวอยู่เฉพาะในเบราว์เซอร์ ไม่ได้ถูกส่งขึ้น repository และไม่ปรากฏแก่ผู้เข้าชมคนอื่น
 
 ## สำรองรุ่นเดิมก่อนเปลี่ยน
 
@@ -114,7 +118,7 @@ Readme_V2.md
 
 - ตรวจ syntax JavaScript ของ app.js และ storage.js
 - ตรวจผ่านเบราว์เซอร์จริง: เพิ่มรายการ, IndexedDB คงข้อมูลหลังรีโหลด, แก้ชื่อรายการ และโหลด YouTube iframe
-- ตรวจ Settings → Pages ด้วยบัญชีที่เข้าสู่ระบบแล้ว พบข้อจำกัดแผนสำหรับ private repository จึงยังไม่มีการ deploy หรือ URL เว็บไซต์ที่ยืนยันสำเร็จ
+- หลังเจ้าของอนุญาตให้เปลี่ยน repository เป็น Public เปิด Pages สำเร็จและตรวจหน้าเว็บจริง รวมการเพิ่มรายการและเก็บข้อมูลหลังรีโหลด
 
 ## เอกสารอ้างอิง
 
