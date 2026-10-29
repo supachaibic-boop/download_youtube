@@ -1,0 +1,139 @@
+# Video Vault — YouTube Download Manager
+
+เว็บภาษาไทยสำหรับรับลิงก์ YouTube ดาวน์โหลดเป็น MP4 / MP3 แสดงชื่อวิดีโอ ลิงก์ต้นทาง สถานะ ความคืบหน้า ชื่อไฟล์ ขนาดไฟล์ และตำแหน่งจัดเก็บ พร้อมบันทึกประวัติใน SQLite จริง
+
+## เริ่มใช้งานบน Windows
+
+1. ติดตั้งและเปิด Docker Desktop (Linux containers)
+2. แตก ZIP ไปยังโฟลเดอร์ที่ต้องการเก็บโปรเจกต์
+3. เปิด PowerShell ในโฟลเดอร์นั้น แล้วรัน:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+สคริปต์สร้าง API token แบบสุ่มใน `.env` เมื่อเริ่มครั้งแรก และรัน `docker compose up -d --build` ให้ ไม่ต้อง compile source เอง เปิด http://localhost:8080 กด **เชื่อมต่อเซิร์ฟเวอร์** ใช้ URL `http://localhost:8080` และคัดลอกค่า API_TOKEN หลังเครื่องหมาย `=` ที่สคริปต์แสดงมาใส่
+
+## Mac / Linux
+
+ต้องมี Docker Compose v2 และ Python 3 สำหรับสร้าง token:
+
+```sh
+sh start.sh
+```
+
+เปิด http://localhost:8080 และเชื่อมต่อด้วย token ที่แสดง
+
+## รัน Docker Compose โดยตรง
+
+สร้างไฟล์ `.env` ข้าง `compose.yaml`:
+
+```dotenv
+API_TOKEN=replace-this-with-a-random-secret-at-least-24-characters
+ALLOWED_ORIGINS=
+```
+
+เปลี่ยนค่า token ตัวอย่างก่อนใช้งาน แล้วรัน:
+
+```sh
+docker compose up -d --build
+```
+
+Compose จะ build image ให้พร้อม Python, yt-dlp, FFmpeg และ Deno ไม่ต้องติดตั้งเครื่องมือดาวน์โหลดบน host
+
+## วิธีใช้งาน
+
+1. เชื่อมต่อเซิร์ฟเวอร์ด้วย API token
+2. วางลิงก์วิดีโอ YouTube / Shorts / วิดีโอ Live ที่จบแล้ว
+3. เลือก MP4 (สูงสุด 360 / 480 / 720 / 1080p) หรือ MP3 192 kbps
+4. กดเริ่มดาวน์โหลด งานจะเข้าคิวและประมวลผลทีละรายการ
+5. สถานะเปลี่ยนจาก รอในคิว → อ่านข้อมูล → ดาวน์โหลด → แปลง/รวมไฟล์ → สำเร็จ หรือ ไม่สำเร็จ
+6. กดชื่อวิดีโอเพื่อเปิดลิงก์ต้นทาง กดปุ่มดาวน์โหลดเพื่อรับไฟล์จากเซิร์ฟเวอร์ลงเครื่องของคุณ
+7. ปุ่มรายละเอียดแสดงชื่อไฟล์ ตำแหน่งจัดเก็บ ข้อผิดพลาด และประวัติสถานะ
+8. รายการที่ไม่สำเร็จสามารถกดลองใหม่ได้
+
+ความคืบหน้ามาจาก yt-dlp และอาจเริ่มนับใหม่ระหว่างดาวน์โหลดวิดีโอและเสียงแยกกัน 100% แสดงเมื่อประมวลผลไฟล์สำเร็จแล้ว คุณภาพจริงขึ้นอยู่กับต้นฉบับและ format ที่ YouTube อนุญาตในขณะนั้น
+
+## ตำแหน่งเก็บข้อมูลถาวร
+
+| บนเครื่องที่รัน Docker | ภายใน container | ข้อมูล |
+|---|---|---|
+| `./data/vault.sqlite3` | `/data/vault.sqlite3` | ประวัติและ metadata |
+| `./data/downloads/<job-id>/` | `/data/downloads/<job-id>/` | ไฟล์ MP4/MP3 และไฟล์ชั่วคราว |
+
+ตัวอย่าง Windows: ถ้าแตกไฟล์ที่ `C:\VideoVault` ไฟล์จะอยู่ใต้ `C:\VideoVault\data\downloads` หน้าเว็บแสดง path ภายใน container ใช้ตารางนี้เทียบกับโฟลเดอร์บนเครื่องจริง
+
+ไฟล์วิดีโอเก็บเป็นไฟล์บนดิสก์ SQLite เก็บ URL, ชื่อวิดีโอ, รูปแบบ, คุณภาพที่เลือก, สถานะ, ความคืบหน้า, จำนวน byte, ความเร็ว, ETA, ชื่อไฟล์, path, ขนาด, ข้อผิดพลาด, เวลาสร้าง/อัปเดต และตาราง events สำหรับประวัติสถานะ ไม่ยัดวิดีโอเป็น BLOB ลงฐานข้อมูล
+
+`docker compose down` ไม่ลบโฟลเดอร์ `data` ย้ายทั้งโฟลเดอร์โปรเจกต์พร้อม `.env` และ `data` เพื่อย้ายเครื่อง สำรองข้อมูลโดยหยุด container ก่อน copy ทั้ง `data` เพื่อให้ฐานข้อมูลกับไฟล์สอดคล้องกัน งานที่ค้างจะกลับเข้าคิวเมื่อเริ่มระบบอีกครั้ง
+
+## คำสั่งดูแลระบบ
+
+```sh
+docker compose logs -f
+docker compose restart
+docker compose down
+```
+
+requirements.txt กำหนด yt-dlp รุ่นที่ตรวจสอบไว้ เมื่อ YouTube เปลี่ยนระบบ ให้เปลี่ยนเลขรุ่นใน requirements.txt เป็นรุ่นที่ต้องการก่อน แล้ว rebuild:
+
+```sh
+docker compose build --pull --no-cache
+docker compose up -d
+```
+
+## หน้าเว็บออนไลน์และ HTTPS
+
+หน้าเว็บออนไลน์เป็น UI ที่โฮสต์แยกจากบริการดาวน์โหลด ไม่รัน yt-dlp หรือ SQLite บนโฮสต์หน้าเว็บ ต้องเชื่อมต่อบริการ Docker ของคุณจึงจะเริ่มดาวน์โหลดได้ ไม่มีรายการตัวอย่างหรือสถานะสำเร็จปลอม
+
+วิธีใช้งานที่ง่ายที่สุดคือเปิด `http://localhost:8080` บนเครื่องที่รัน Docker โดยตรง หน้าเว็บกับ API อยู่ใน container เดียวกัน ไม่ต้องใช้หน้าออนไลน์ ไม่ต้องตั้ง CORS
+
+หากต้องการใช้หน้าเว็บออนไลน์ ให้เปิด API ผ่าน reverse proxy ที่ใช้ HTTPS และตั้ง `.env`:
+
+```dotenv
+ALLOWED_ORIGINS=https://YOUR-EXACT-SITE-HOST
+```
+
+ใส่ origin จริงตาม URL เว็บไซต์ ไม่มี `/` ท้าย URL จากนั้น `docker compose up -d` และกรอก URL HTTPS ของ API ในหน้าเว็บ เว็บไซต์ HTTPS จะไม่เชื่อมต่อ HTTP localhost เพราะ mixed content จึงมีข้อความอธิบายในหน้าตั้งค่า
+
+Compose bind ที่ `127.0.0.1` เป็นค่าเริ่มต้น สำหรับ reverse proxy ที่อยู่บน host ให้ชี้ไป `127.0.0.1:8080` หาก proxy อยู่ใน container อีกตัว ต้องตั้ง shared Docker network ให้ proxy ติดต่อ service `vault:8080` ได้โดยไม่เปิด API สู่ public แบบ HTTP
+
+## ขอบเขต v1
+
+- ผู้ใช้งานส่วนตัว 1 token, worker เดียว, ไม่รันหลาย replicas กับ data เดียวกัน
+- คิวไม่เกิน 50 งานที่ยังไม่จบ หน้าเว็บแสดงรายการล่าสุดสูงสุด 1,000 รายการ
+- ไม่รองรับ playlist, ถ่ายทอดสดที่กำลังออกอากาศ, DRM หรือการข้ามสิทธิ์เข้าถึง
+- จำกัดความยาว 3 ชั่วโมงและ `max_filesize` ของ downloader 2 GiB ต่อไฟล์ที่ downloader รับรู้ ขนาดหลังรวม/แปลงอาจมากกว่า 2 GiB; ไม่ใช่ disk quota
+- ไม่มีระบบลบไฟล์หรือยกเลิกงานใน v1; ไฟล์ชั่วคราวของงานล้มเหลวยังคงอยู่เพื่อรองรับ retry
+- Token เก็บใน sessionStorage ของแท็บ และส่งผ่าน Authorization header ลิงก์รับไฟล์เซ็น HMAC อายุ 2 นาที
+- ใช้กับเนื้อหาที่คุณมีสิทธิ์ดาวน์โหลด
+- YouTube อาจจำกัดบางวิดีโอ/ภูมิภาค/เครือข่ายหรือขอการยืนยันบัญชี ระบบจะแสดงข้อผิดพลาดจริง ไม่มีการข้ามข้อจำกัด
+
+## การทดสอบ
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+ตรวจสอบ auth, URL validation, SQL persistence, retry/recovery หลัง restart, events, signed file delivery และเส้นทาง worker สำเร็จด้วย yt-dlp จำลอง ข้อมูลทดสอบอยู่ใน temp ไม่ปะปนฐานข้อมูลจริง
+
+ทดสอบ browser แล้ว: หน้าแรก, หน้าต่างเชื่อมต่อ, ตัวเลือก MP3 ปิดความละเอียด, คลังไฟล์, ตั้งค่า
+
+**ข้อจำกัดการตรวจสอบ:** เครื่องที่สร้างชุดนี้ไม่มี Docker จึงยังไม่ได้ build image และไม่ได้ดาวน์โหลด YouTube จริง การทดสอบ worker ใช้ mock ไม่ใช่หลักฐานว่าวิดีโอทุกลิงก์ดาวน์โหลดได้
+
+## โครงสร้าง
+
+```text
+compose.yaml
+Dockerfile
+requirements.txt
+start.ps1 / start.sh
+dist/index.html
+server/app.py
+tests/test_api.py
+data/                    (สร้างเมื่อรัน ไม่อยู่ใน ZIP)
+```
+
+API: `GET /api/health`, `GET /api/jobs`, `POST /api/jobs`, `GET /api/jobs/<id>/events`, `POST /api/jobs/<id>/retry`, `GET /api/jobs/<id>/file-link` ทุก API ต้องใช้ Bearer token ส่วนลิงก์ `/files/<id>` ใช้ลายเซ็นชั่วคราว
+
+เครื่องมือดาวน์โหลดอ้างอิงเอกสารทางการ: https://github.com/yt-dlp/yt-dlp และ https://github.com/yt-dlp/yt-dlp/wiki/EJS
