@@ -6,7 +6,9 @@ V2 เป็นเว็บแบบ static สำหรับวางลิง
 
 ## สถานะการเผยแพร่
 
-ซอร์ส V2 อยู่ใน `docs/` พร้อมเผยแพร่จาก branch `main` และโฟลเดอร์ `/docs` การเปิดใช้ Pages ยังต้องตั้งค่าที่ repository → Settings → Pages ด้วยบัญชีเจ้าของ การมีไฟล์ใน GitHub ยังไม่ใช่หลักฐานว่าเว็บไซต์ถูกเผยแพร่แล้ว
+**ยังไม่สามารถ deploy ได้:** ตรวจหน้า Settings → Pages ขณะเข้าสู่ระบบแล้ว GitHub แสดงข้อความ **“Upgrade or make this repository public to enable Pages”** เนื่องจาก repository เป็น Private และแผนปัจจุบันยังไม่รองรับ Pages สำหรับ repository นี้ ไม่มีการเปลี่ยน visibility หรืออัปเกรดแผนโดยอัตโนมัติ
+
+ซอร์ส V2 อยู่ใน `docs/` พร้อมเผยแพร่จาก branch `main` และโฟลเดอร์ `/docs` เมื่อเจ้าของเลือกอัปเกรดแผนหรืออนุญาตให้เปลี่ยน repository เป็น Public แล้วจึงเปิด Pages ได้ การเปลี่ยน repository นี้เป็น Public จะเปิดซอร์สทุก branch รวม `v1` ด้วย ยังไม่มี URL เว็บไซต์ที่ยืนยันว่า deploy สำเร็จ
 
 Repository นี้ยังคงเป็น Private ไม่มีการเปลี่ยนเป็น Public โดยอัตโนมัติ GitHub Pages สำหรับ private repository ขึ้นอยู่กับแผน GitHub ของบัญชี และหน้าเว็บ Pages มักเปิดให้บุคคลทั่วไปเข้าชมได้แม้ซอร์สเป็น Private รายการที่บันทึกใน V2 อยู่ในเบราว์เซอร์ ไม่ได้บรรจุในไฟล์หน้าเว็บ
 
@@ -112,7 +114,7 @@ Readme_V2.md
 
 - ตรวจ syntax JavaScript ของ app.js และ storage.js
 - ตรวจผ่านเบราว์เซอร์จริง: เพิ่มรายการ, IndexedDB คงข้อมูลหลังรีโหลด, แก้ชื่อรายการ และโหลด YouTube iframe
-- ยังต้องยืนยันการ deploy GitHub Pages ด้วยบัญชีเจ้าของ ยังไม่มีการอ้างว่า Pages URL ใช้งานได้ก่อน GitHub ยืนยัน
+- ตรวจ Settings → Pages ด้วยบัญชีที่เข้าสู่ระบบแล้ว พบข้อจำกัดแผนสำหรับ private repository จึงยังไม่มีการ deploy หรือ URL เว็บไซต์ที่ยืนยันสำเร็จ
 
 ## เอกสารอ้างอิง
 
